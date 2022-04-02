@@ -1,5 +1,10 @@
 import sys
 import numpy as np
+import nltk
+nltk.download('wordnet')
+nltk.download('omw-1.4')
+import pandas as pd
+
 
 from sklearn.ensemble import GradientBoostingClassifier
 from feature_engineering import refuting_features, polarity_features, hand_features, gen_or_load_feats
@@ -12,12 +17,16 @@ from utils.system import parse_params, check_version
 
 
 def generate_features(stances,dataset,name):
-    h, b, y = [],[],[]
+    h, b, y, bodyID = [],[],[],[]
 
     for stance in stances:
         y.append(LABELS.index(stance['Stance']))
         h.append(stance['Headline'])
         b.append(dataset.articles[stance['Body ID']])
+        bodyID.append(stance['Body ID'])
+
+    x_headline = h
+    x_bodyID = bodyID
 
     X_overlap = gen_or_load_feats(word_overlap_features, h, b, "features/overlap."+name+".npy")
     X_refuting = gen_or_load_feats(refuting_features, h, b, "features/refuting."+name+".npy")
@@ -25,7 +34,8 @@ def generate_features(stances,dataset,name):
     X_hand = gen_or_load_feats(hand_features, h, b, "features/hand."+name+".npy")
 
     X = np.c_[X_hand, X_polarity, X_refuting, X_overlap]
-    return X,y
+    return X,y, x_headline, x_bodyID
+
 
 if __name__ == "__main__":
     check_version()
@@ -38,15 +48,15 @@ if __name__ == "__main__":
 
     # Load the competition dataset
     competition_dataset = DataSet("competition_test")
-    X_competition, y_competition = generate_features(competition_dataset.stances, competition_dataset, "competition")
+    X_competition, y_competition, x_Headline, x_bodyID = generate_features(competition_dataset.stances, competition_dataset, "competition")
 
     Xs = dict()
     ys = dict()
 
     # Load/Precompute all features now
-    X_holdout,y_holdout = generate_features(hold_out_stances,d,"holdout")
+    X_holdout,y_holdout, ignoreheadline, ignorebodyID = generate_features(hold_out_stances,d,"holdout")
     for fold in fold_stances:
-        Xs[fold],ys[fold] = generate_features(fold_stances[fold],d,str(fold))
+        Xs[fold],ys[fold], ignoreheadline, ignorebodyID = generate_features(fold_stances[fold],d,str(fold))
 
 
     best_score = 0
@@ -92,7 +102,12 @@ if __name__ == "__main__":
     print("")
 
     #Run on competition dataset
+
     predicted = [LABELS[int(a)] for a in best_fold.predict(X_competition)]
+    
+    test_data = pd.DataFrame({'Headline':x_Headline, 'Body ID':x_bodyID, 'Stance':predicted})
+    test_data.to_csv('answer.csv', index=False, encoding='utf-8')
+
     actual = [LABELS[int(a)] for a in y_competition]
 
     print("Scores on the test set")
